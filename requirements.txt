@@ -1,3 +1,5 @@
 eyeD3
 python-magic-bin
 shazamio
+musicbrainzngs
+pyacoustid
