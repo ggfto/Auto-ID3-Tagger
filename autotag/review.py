@@ -28,11 +28,16 @@ def accept(row, state_dir):
 
 
 def use_file_name(row, state_dir):
-    """Uses the artist and title from the file name; other fields stay. Returns the new report row."""
+    """
+    Uses the artist and title from the file name. Returns the new report row.
+
+    The current album, year and cover are removed, since they came with the wrong
+    artist and title; the catalog fills them when it knows this recording.
+    """
     proposal = name_proposal(row["path"])
     if not proposal:
         raise ValueError("the file name does not have an artist and a title")
-    return _write(row["path"], proposal, "File name", "tagged_from_name", state_dir)
+    return _write(row["path"], proposal, "File name", "tagged_from_name", state_dir, discard_release=True)
 
 
 def reject(row):
@@ -40,10 +45,11 @@ def reject(row):
     return {**row, "status": "rejected"}
 
 
-def _write(path, proposal, source, status, state_dir):
+def _write(path, proposal, source, status, state_dir, discard_release=False):
     was_cloud_only = audiofile.is_cloud_only(path)
     try:
-        return tagging.write_proposal(path, proposal, audiofile.read_tags(path), source, status, state_dir)
+        existing = audiofile.read_tags(path)
+        return tagging.write_proposal(path, proposal, existing, source, status, state_dir, discard_release)
     finally:
         if was_cloud_only:
             audiofile.free_local_copy(path)

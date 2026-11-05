@@ -13,9 +13,16 @@ def identification_row(path, existing, proposal, source):
             "genre": proposal.get('genre'), "cover_art": proposal.get('cover_art')}
 
 
-def write_proposal(path, proposal, existing, source, status, state_dir):
-    """Completes the proposal, writes it if it changes anything, and returns the report row."""
+def write_proposal(path, proposal, existing, source, status, state_dir, discard_release=False):
+    """
+    Completes the proposal, writes it if it changes anything, and returns the report row.
+
+    discard_release is for when the current tags describe another recording: their
+    album, year and cover are removed instead of kept.
+    """
     filename = os.path.basename(path)
+    if discard_release:
+        existing = {**existing, 'album': None, 'year': None, 'has_cover': False}
     title = metadata.choose_title(proposal['title'], filename, existing.get('title'))
     release_info = None
     if metadata.needs_release_info(proposal, title):
@@ -23,10 +30,12 @@ def write_proposal(path, proposal, existing, source, status, state_dir):
     final = metadata.build_final(proposal, filename, existing, release_info)
 
     row = identification_row(path, existing, {**proposal, **final}, source)
-    if metadata.nothing_to_change(final, existing):
+    if not discard_release and metadata.nothing_to_change(final, existing):
         return {**row, "status": "unchanged"}
 
     backup.backup_tag(path, state_dir)
+    if discard_release:
+        audiofile.clear_release_tags(path)
     audiofile.write_tags(path, final)
     return {**row, "status": status}
 

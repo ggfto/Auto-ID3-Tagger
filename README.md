@@ -27,7 +27,7 @@ Each run appends to `.autotag/report.csv` (next to the script, or under `--state
 |---|---|
 | `tagged` | Identification agrees with the file name (or current tags, if the name says nothing useful); the file was updated. |
 | `tagged_no_reference` | The file had no useful name or tags to compare with; it was updated. |
-| `tagged_from_name` | In the review, artist and title were taken from the file name; the file was updated. |
+| `tagged_from_name` | In the review, artist and title were taken from the file name, and the old album, year and cover were removed unless MusicBrainz knows the recording. |
 | `unchanged` | The file already had the right values; it was not written. |
 | `review` | Identification differs from that reference; the file was not changed and waits for a decision. |
 | `rejected` | In the review, the identification was rejected; the file was not changed. |

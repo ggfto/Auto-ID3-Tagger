@@ -43,6 +43,20 @@ def test_fields_without_a_value_keep_what_the_file_has(tmp_path, extension):
     assert (tags["artist"], tags["album"], tags["year"], tags["genre"]) == ("B", "Album", "1999", "Pop")
 
 
+@needs_ffmpeg
+@pytest.mark.parametrize("extension", ENCODERS)
+def test_clear_removes_only_album_year_and_cover(tmp_path, monkeypatch, extension):
+    monkeypatch.setattr(audiofile, "download_cover", lambda url: (PNG, "image/png"))
+    path = make_audio(tmp_path, extension)
+    audiofile.write_tags(path, {"artist": "A", "title": "T", "album": "Album", "year": "1999", "genre": "Pop",
+                                "cover_art": "http://cover"})
+
+    audiofile.clear_release_tags(path)
+
+    assert audiofile.read_tags(path) == {"artist": "A", "title": "T", "album": None, "year": None,
+                                         "genre": "Pop", "has_cover": False}
+
+
 def test_unreadable_file_reads_as_empty(tmp_path):
     path = tmp_path / "broken.m4a"
     path.write_bytes(b"not audio")

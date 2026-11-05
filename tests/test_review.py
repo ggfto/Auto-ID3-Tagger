@@ -31,6 +31,19 @@ def test_use_file_name_writes_the_name(row, tmp_path):
     assert result["source"] == "File name"
 
 
+def test_use_file_name_drops_the_release_of_the_wrong_tags(row, tmp_path, monkeypatch):
+    cleared = []
+    monkeypatch.setattr(tagging.audiofile, "clear_release_tags", cleared.append)
+    monkeypatch.setattr(tagging.audiofile, "read_tags", lambda path: {
+        "artist": "Shannon", "title": "Let the Music Play", "album": "Wrong", "year": "2013", "genre": None,
+        "has_cover": True})
+
+    review.use_file_name(row, str(tmp_path / "state"))
+
+    assert cleared == [row["path"]]
+    assert (row["written"][0]["album"], row["written"][0]["year"]) == (None, None)
+
+
 def test_use_file_name_needs_artist_and_title(tmp_path):
     with pytest.raises(ValueError):
         review.use_file_name({"path": str(tmp_path / "Just a Title.mp3")}, str(tmp_path))

@@ -99,6 +99,20 @@ def _write_mp3(path, final, cover):
     tag.save(version=(2, 3, 0))
 
 
+def _clear_mp3(path):
+    audio = eyed3.load(path)
+    if not audio or not audio.tag:
+        return
+    tag = audio.tag
+    tag.album = None
+    tag.recording_date = None
+    tag.release_date = None
+    tag.original_release_date = None
+    for image in list(tag.images):
+        tag.images.remove(image.description)
+    tag.save(version=(2, 3, 0))
+
+
 # --- M4A ---
 
 def _first(tags, key):
@@ -136,6 +150,18 @@ def _write_m4a(path, final, cover):
     audio.save()
 
 
+def _clear_keys(audio, keys):
+    if audio.tags:
+        for key in keys:
+            if key in audio.tags:
+                del audio.tags[key]
+        audio.save()
+
+
+def _clear_m4a(path):
+    _clear_keys(MP4(path), ('\xa9alb', '\xa9day', 'covr'))
+
+
 # --- WMA ---
 
 def _read_wma(path):
@@ -171,8 +197,13 @@ def _write_wma(path, final, cover):
     audio.save()
 
 
+def _clear_wma(path):
+    _clear_keys(ASF(path), ('WM/AlbumTitle', 'WM/Year', 'WM/Picture'))
+
+
 READERS = {".mp3": _read_mp3, ".m4a": _read_m4a, ".wma": _read_wma}
 WRITERS = {".mp3": _write_mp3, ".m4a": _write_m4a, ".wma": _write_wma}
+CLEARERS = {".mp3": _clear_mp3, ".m4a": _clear_m4a, ".wma": _clear_wma}
 
 
 def _extension(path):
@@ -186,6 +217,11 @@ def read_tags(path):
         return {**empty, **READERS[_extension(path)](path)}
     except Exception:
         return empty  # A corrupted tag is handled when writing.
+
+
+def clear_release_tags(path):
+    """Removes album, year and cover."""
+    CLEARERS[_extension(path)](path)
 
 
 def write_tags(path, final):
