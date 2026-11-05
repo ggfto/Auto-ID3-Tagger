@@ -8,9 +8,12 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 
 from . import audiofile, backup, report, tagging
+from .identify import RateLimited
 
 MAX_ATTEMPTS = 5
 MAX_CONSECUTIVE_ERRORS = 10
+# The pacer waits at least a minute per refusal at its slowest, so this is about an hour.
+MAX_CONSECUTIVE_LIMITS = 60
 RETRY_BASE_SECONDS = 15
 
 
@@ -39,11 +42,13 @@ def attempt_file(task, acoustid_key, state_dir):
     """One try at a file. Runs in a worker thread."""
     if task.was_cloud_only is None:
         task.was_cloud_only = audiofile.is_cloud_only(task.path)
-    try:
-        return tagging.process_file(task.path, acoustid_key, state_dir)
-    finally:
-        if task.was_cloud_only:
-            audiofile.free_local_copy(task.path)
+    return tagging.process_file(task.path, acoustid_key, state_dir)
+
+
+def _release(task):
+    """The file stays local between tries, so a retry does not download it again."""
+    if task.was_cloud_only:
+        audiofile.free_local_copy(task.path)
 
 
 def _next_task(waiting, files, now):
@@ -62,6 +67,7 @@ def run(folder, acoustid_key, state_dir, workers):
     order = itertools.count()
     running = {}
     consecutive_errors = 0
+    consecutive_limits = 0
     stopping = False
 
     print(f"Scanning recursively: {folder} ({workers} threads)")
@@ -87,10 +93,20 @@ def run(folder, acoustid_key, state_dir, workers):
 
             for future in finished:
                 task = running.pop(future)
-                task.attempt += 1
                 try:
                     row = future.result()
+                except RateLimited as e:
+                    # Says nothing about the file, so it does not use up an attempt.
+                    consecutive_limits += 1
+                    print(f"Rate limited by {e}, slowing down: {task.path}")
+                    heapq.heappush(waiting, (time.monotonic(), next(order), task))
+                    if consecutive_limits >= MAX_CONSECUTIVE_LIMITS and not stopping:
+                        stopping = True
+                        print("Stopping: the service keeps refusing requests. "
+                              "Run the same command later to continue.")
+                    continue
                 except Exception as e:
+                    task.attempt += 1
                     # ValueError means the file itself is the problem, so trying again cannot help.
                     if not isinstance(e, ValueError) and task.attempt < MAX_ATTEMPTS:
                         delay = retry_delay(task.attempt)
@@ -99,7 +115,9 @@ def run(folder, acoustid_key, state_dir, workers):
                         continue
                     row = {"path": task.path, "status": "error", "detail": repr(e)}
 
+                consecutive_limits = 0
                 log.add(row)
+                _release(task)
                 counts[row["status"]] = counts.get(row["status"], 0) + 1
                 print(f"{row['status']}: {task.path} -> {row.get('new_artist')} - {row.get('new_title')}")
 
@@ -110,6 +128,8 @@ def run(folder, acoustid_key, state_dir, workers):
                           "Run the same command later to continue.")
     finally:
         pool.shutdown(wait=True, cancel_futures=True)
+        for task in [entry[2] for entry in waiting] + list(running.values()):
+            _release(task)
         log.close()
         print(f"Summary: {counts}")
         print(f"Report: {report.report_path(state_dir)}")

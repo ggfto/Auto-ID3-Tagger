@@ -96,7 +96,8 @@ def _write_mp3(path, final, cover):
         tag.recording_date = eyed3.core.Date(int(year))
     if cover:
         tag.images.set(ImageFrame.FRONT_COVER, cover[0], cover[1])
-    tag.save(version=(2, 3, 0))
+    # Frames read from the file keep their encoding, and Latin-1 cannot hold every new value.
+    tag.save(version=(2, 3, 0), encoding="utf16")
 
 
 def _clear_mp3(path):

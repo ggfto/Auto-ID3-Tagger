@@ -4,6 +4,7 @@ import time
 import pytest
 
 from autotag import report, runner, tagging
+from autotag.identify import RateLimited
 
 
 @pytest.fixture
@@ -88,6 +89,53 @@ def test_file_that_keeps_failing_becomes_an_error(library, monkeypatch):
 
     assert len(tries) == runner.MAX_ATTEMPTS
     assert statuses(state)["a.mp3"] == "error"
+
+
+def test_rate_limit_does_not_use_up_attempts(library, monkeypatch):
+    folder, state = library
+    tries = []
+
+    def behavior(path):
+        if path.endswith("a.mp3"):
+            tries.append(path)
+            if len(tries) <= runner.MAX_ATTEMPTS + 2:
+                raise RateLimited("Shazam")
+
+    monkeypatch.setattr(tagging, "process_file", fake_process(behavior))
+    runner.run(folder, None, state, workers=1)
+
+    assert statuses(state)["a.mp3"] == "tagged"
+
+
+def test_run_stops_when_the_service_keeps_refusing(library, monkeypatch):
+    folder, state = library
+    monkeypatch.setattr(runner, "MAX_CONSECUTIVE_LIMITS", 3)
+
+    def refuse(path):
+        raise RateLimited("Shazam")
+
+    monkeypatch.setattr(tagging, "process_file", fake_process(refuse))
+    runner.run(folder, None, state, workers=1)
+
+    assert report.load(state) == {}
+
+
+def test_cloud_file_is_released_once_after_its_last_try(library, monkeypatch):
+    folder, state = library
+    released = []
+    tries = {}
+    monkeypatch.setattr(runner.audiofile, "is_cloud_only", lambda path: True)
+    monkeypatch.setattr(runner.audiofile, "free_local_copy", released.append)
+
+    def behavior(path):
+        tries[path] = tries.get(path, 0) + 1
+        if path.endswith("a.mp3") and tries[path] == 1:
+            raise ConnectionError("down")
+
+    monkeypatch.setattr(tagging, "process_file", fake_process(behavior))
+    runner.run(folder, None, state, workers=1)
+
+    assert sorted(path[-5:] for path in released) == ["a.mp3", "b.mp3", "c.mp3", "d.m4a"]
 
 
 def test_problem_in_the_file_is_not_retried(library, monkeypatch):

@@ -6,16 +6,18 @@ This tool automatically identifies MP3, M4A and WMA files in a directory (recurs
 
 *   **Recursively Scans Directories**: Processes all supported files in the given folder and its subfolders.
 *   **Parallel, With a Limit**: Each file runs in its own thread, up to `--workers` (default 4). A file waiting to retry does not hold a thread, so the queue keeps moving.
+*   **Respects Rate Limits**: Shazam limits requests across all threads, so they share one pace that slows down when Shazam refuses a request and speeds up again while requests succeed. The limit, not the number of threads, sets the speed of a long run.
 *   **Multiple Recognition Providers**:
-    *   **Shazam**: Primary recognition method (fast, accurate).
-    *   **AcoustID**: Fallback method using audio fingerprinting (requires free API key).
+    *   **AcoustID** (optional, needs a free API key): Tried first. A result the file name confirms saves a Shazam request, which matters because Shazam's limit sets the speed of a long run.
+    *   **Shazam**: Decides everything else. It finds more songs and also brings cover and genre.
 *   **Reliable Album and Year**: Uses **MusicBrainz** when it has an earlier official studio album of exactly that artist and title, or a better year for the same album. Remixes, live versions and similar recordings keep the release that was identified.
+*   **Cover Art**: From the identification, or from the **Cover Art Archive** when the file has no cover and MusicBrainz supplied the album.
 *   **Automatic Tagging**: Updates Artist, Title, Album, Year, Genre, and Cover Art. Fields without a new value keep what the file already has, and a file with nothing to change is not written.
 *   **Keeps What the File Knows**: The version in the file name, such as `(Extended Mix)`, stays in the title, and current spelling stays when it says the same words (`Sérgio`, not `Sergio`).
 *   **Safe by Default**: A file is left unchanged when the identification differs from its name (or its current tags, if the name says nothing useful). It is listed as `review` in the report.
 *   **Backup and Restore**: The original tags are saved before the first change to a file, and `--restore` puts them back.
 *   **Review**: `--review` walks through the files that need a decision.
-*   **Resumable**: A new run skips files already processed and retries the ones that had errors. A failed file is tried up to 5 times, with growing waits, and the run stops after 10 files in a row end in error.
+*   **Resumable**: A new run skips files already processed and retries the ones that had errors. A failed file is tried up to 5 times, with growing waits, and a rate limit does not count as a failure. The run stops after 10 files in a row end in error, or after about an hour of refused requests.
 *   **OneDrive Aware**: Cloud-only files are returned to cloud-only after being processed.
 *   **Corrupted Tag Fixer**: Automatically detects and fixes corrupted ID3 headers (e.g., UTF-16 surrogate errors) that crash standard libraries.
 
@@ -90,17 +92,19 @@ Run the script by providing the path to your music folder:
 python id_song.py "C:\Path\To\Your\Music"
 ```
 
-**Advanced Usage (With AcoustID Fallback)**:
-Obtain a free API Key from [AcoustID.org](https://acoustid.org/) and run:
+**With AcoustID**:
+Register an application at [AcoustID.org](https://acoustid.org/new-application) to get a free API key (the key on your user profile is refused here). Keep it in an environment variable, so it stays out of your command history:
 ```powershell
-python id_song.py "C:\Path\To\Your\Music" --acoustid-key "YOUR_API_KEY"
+$env:ACOUSTID_API_KEY = "YOUR_API_KEY"
+python id_song.py "C:\Path\To\Your\Music"
 ```
+`--acoustid-key` also works and takes priority.
 
 **More or fewer files at the same time**:
 ```powershell
 python id_song.py "C:\Path\To\Your\Music" --workers 8
 ```
-MusicBrainz allows one request per second across all threads, so more threads stop helping after a point.
+Shazam and MusicBrainz limit requests across all threads, so more threads stop helping after a point.
 
 ## Development
 

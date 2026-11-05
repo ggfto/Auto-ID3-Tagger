@@ -1,7 +1,7 @@
 import pytest
 
-from autotag.metadata import (build_final, choose_album_and_year, choose_title, keep_spelling, needs_release_info,
-                              nothing_to_change)
+from autotag.metadata import (build_final, choose_album_and_year, choose_title, drop_unconfirmed_details, keep_spelling,
+                              needs_release_info, nothing_to_change)
 
 
 @pytest.mark.parametrize("new,filename,existing,expected", [
@@ -75,6 +75,11 @@ def test_catalog_without_an_earlier_release_does_not_replace_the_identification(
     assert choose_album_and_year(proposal, "How Deep", {}, info) == ("Bee Gees: 1976 - 1979 - EP", "1977")
 
 
+def test_unreliable_catalog_album_is_ignored():
+    proposal = {"album": "Divide", "year": "2017"}
+    assert choose_album_and_year(proposal, "Shape of You", {}, catalog("Various Tracks", "2015")) == ("Divide", "2017")
+
+
 def test_catalog_fills_what_the_identification_does_not_have():
     assert choose_album_and_year({"album": None, "year": None}, "Song", {}, catalog("Album", "1990")) == ("Album", "1990")
 
@@ -110,3 +115,45 @@ def test_nothing_to_change_needs_a_cover_when_one_is_available():
     assert not nothing_to_change(final, existing)
     assert nothing_to_change(final, {**existing, "has_cover": True})
     assert nothing_to_change({**final, "cover_art": None}, existing)
+
+
+FROM_CATALOG = {"album": "Album", "year": "1990", "cover_art": "http://album", "earliest_year": "1980",
+                "any_album": "Hits", "any_cover": "http://hits"}
+
+
+def test_catalog_cover_goes_with_the_catalog_album():
+    final = build_final({"artist": "A", "title": "T"}, "A - T.mp3", {}, FROM_CATALOG)
+    assert (final["album"], final["cover_art"]) == ("Album", "http://album")
+
+
+def test_catalog_cover_does_not_replace_the_one_in_the_file():
+    final = build_final({"artist": "A", "title": "T"}, "A - T.mp3", {"has_cover": True}, FROM_CATALOG)
+    assert final["cover_art"] is None
+
+
+def test_catalog_cover_is_not_used_for_another_album():
+    proposal = {"artist": "A", "title": "T", "album": "Own", "year": "1985"}
+    final = build_final(proposal, "A - T.mp3", {}, {**FROM_CATALOG, "year": "2000"})
+    assert (final["album"], final["cover_art"]) == ("Own", None)
+
+
+def test_identified_cover_wins_over_the_catalog():
+    final = build_final({"artist": "A", "title": "T", "cover_art": "http://own"}, "A - T.mp3", {}, FROM_CATALOG)
+    assert final["cover_art"] == "http://own"
+
+
+@pytest.mark.parametrize("title,filename,expected", [
+    ("Heat Waves (instrumental)", "63 - Glass Animals - Heat Waves.mp3", "Heat Waves"),
+    ("abcdefu (demo)", "61 - GAYLE - abcdefu.mp3", "abcdefu"),
+    ("Temperature (Album Version)", "11 - Temperature - Sean Paul - The Trinity.mp3", "Temperature"),
+    # The file name confirms these.
+    ("Cold Heart (PNAU Remix)", "01 - Cold Heart - PNAU Remix - Elton John.mp3", "Cold Heart (PNAU Remix)"),
+    ("MONTERO (Call Me by Your Name)", "22 - Lil Nas X - MONTERO (Call Me By Your Name).mp3",
+     "MONTERO (Call Me by Your Name)"),
+    # A small typo in the file name is still a confirmation.
+    ("Belly Dancer (Bonanza)", "58 - Akon - Bananza (Belly Dancer).mp3", "Belly Dancer (Bonanza)"),
+    # A title made only of brackets is left alone.
+    ("(Untitled)", "Artist - Song.mp3", "(Untitled)"),
+])
+def test_drop_unconfirmed_details(title, filename, expected):
+    assert drop_unconfirmed_details(title, filename) == expected

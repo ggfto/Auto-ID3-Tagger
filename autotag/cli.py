@@ -9,7 +9,8 @@ DEFAULT_STATE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath
 def main():
     parser = argparse.ArgumentParser(description="Auto ID3 Tagger via Shazam, AcoustID & MusicBrainz")
     parser.add_argument("folder", help="path to the music folder")
-    parser.add_argument("--acoustid-key", help="optional API key for AcoustID recognition")
+    parser.add_argument("--acoustid-key", default=os.environ.get("ACOUSTID_API_KEY"),
+                        help="AcoustID API key (default: the ACOUSTID_API_KEY environment variable)")
     parser.add_argument("--workers", type=int, default=4, help="files processed at the same time (default: 4)")
     parser.add_argument("--state-dir", default=DEFAULT_STATE_DIR,
                         help="where the report and the original tags are kept (default: .autotag next to this script)")

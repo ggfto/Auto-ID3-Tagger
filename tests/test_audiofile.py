@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 
+import eyed3
 import pytest
 
 from autotag import audiofile
@@ -69,3 +70,18 @@ def test_unreadable_file_reads_as_empty(tmp_path):
 ])
 def test_supported_files(name, expected):
     assert audiofile.is_audio_file(name) is expected
+
+
+@needs_ffmpeg
+def test_new_value_fits_in_a_tag_stored_as_latin1(tmp_path):
+    path = make_audio(tmp_path, "mp3")
+    audio = eyed3.load(path)
+    audio.initTag(version=(2, 3, 0))
+    audio.tag.artist = "Old"
+    audio.tag.title = "Old"
+    audio.tag.save(version=(2, 3, 0), encoding="latin1")
+
+    audiofile.write_tags(path, {"artist": "GIV\u0112ON", "title": "Somebody\u2019s", "album": "Z\u2010Sides"})
+
+    tags = audiofile.read_tags(path)
+    assert (tags["artist"], tags["title"], tags["album"]) == ("GIV\u0112ON", "Somebody\u2019s", "Z\u2010Sides")

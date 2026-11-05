@@ -1,7 +1,7 @@
 """Decides the final values to write, given an identification and what the file already has."""
 import re
 
-from .matching import file_stem, is_informative, split_stem, token_list, tokens
+from .matching import coverage, file_stem, is_informative, split_stem, token_list, tokens
 
 VERSION_WORDS = re.compile(
     r"\b(mix|remix|edit|version|versao|versão|live|remaster(ed)?|extended|radio|acoustic|acustico|acústico"
@@ -12,7 +12,7 @@ SPECIFIC_RECORDING = re.compile(
     re.IGNORECASE)
 UNRELIABLE_ALBUM = re.compile(
     r"sped[ -]up|slowed|nightcore|karaoke|tribute|podcast|workout|relax|lullab|ringtone|made famous"
-    r"|in the style of|originally performed", re.IGNORECASE)
+    r"|in the style of|originally performed|various (tracks|artists)", re.IGNORECASE)
 
 BRACKETS = re.compile(r"\s*[(\[{]([^)\]}]*)[)\]}]")
 TRAILING_DASH = re.compile(r"\s+[-–—]\s+([^-–—]+)$")
@@ -59,6 +59,18 @@ def _more_complete_title(new_base, existing_base, stem):
     return existing_base if all(word in squeezed for word in extras) else new_base
 
 
+def drop_unconfirmed_details(title, filename):
+    """
+    title without bracketed details the file name does not have.
+
+    A fingerprint is shared by similar recordings, so a detail such as (instrumental)
+    may belong to another one of them.
+    """
+    named = tokens(file_stem(filename))
+    kept = BRACKETS.sub(lambda m: m.group(0) if coverage(tokens(m.group(1)), named) == 1 else "", title).strip()
+    return kept or title
+
+
 def choose_title(new_title, filename, existing_title):
     """
     Identified title, keeping what the file knows and the identification may not.
@@ -92,7 +104,9 @@ def choose_album_and_year(proposal, title, existing, release_info):
 
     if release_info and not SPECIFIC_RECORDING.search(title):
         catalog_album, catalog_year = release_info.get("album"), release_info.get("year")
-        if catalog_album and not (album and year):
+        if catalog_album and UNRELIABLE_ALBUM.search(catalog_album):
+            pass
+        elif catalog_album and not (album and year):
             album, year = catalog_album, catalog_year
         elif catalog_album and tokens(catalog_album) == tokens(album):
             year = catalog_year
@@ -114,6 +128,19 @@ def needs_release_info(proposal, title):
     return not SPECIFIC_RECORDING.search(title) or not (proposal.get("album") and proposal.get("year"))
 
 
+def choose_cover(proposal, album, existing, release_info):
+    """The identified cover, or the catalog's when the file has none and the album is that release."""
+    if proposal.get("cover_art"):
+        return proposal["cover_art"]
+    if existing.get("has_cover") or not release_info:
+        return None
+    if album == release_info.get("album"):
+        return release_info.get("cover_art")
+    if album == release_info.get("any_album"):
+        return release_info.get("any_cover")
+    return None
+
+
 def build_final(proposal, filename, existing, release_info):
     title = choose_title(proposal["title"], filename, existing.get("title"))
     album, year = choose_album_and_year(proposal, title, existing, release_info)
@@ -123,7 +150,7 @@ def build_final(proposal, filename, existing, release_info):
         "album": album,
         "year": year,
         "genre": proposal.get("genre") or existing.get("genre"),
-        "cover_art": proposal.get("cover_art"),
+        "cover_art": choose_cover(proposal, album, existing, release_info),
     }
 
 

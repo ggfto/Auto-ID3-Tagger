@@ -40,34 +40,38 @@ def write_proposal(path, proposal, existing, source, status, state_dir, discard_
     return {**row, "status": status}
 
 
-def identify_file(path, acoustid_key):
-    """(proposal, source), or (None, '') when nothing matched. A Shazam failure raises if nothing else answers."""
-    shazam_error = None
-    try:
-        proposal = identify.identify_shazam(path)
-        if proposal:
-            return proposal, "Shazam"
-    except Exception as e:
-        shazam_error = e
+def identify_file(path, acoustid_key, reference):
+    """
+    (proposal, source), or (None, '') when nothing matched.
 
-    if acoustid_key:
-        proposal = identify.identify_acoustid(acoustid_key, path)
-        if proposal:
-            return proposal, "AcoustID"
-    if shazam_error:
-        raise shazam_error
+    AcoustID has no tight rate limit, so a result the file name confirms saves a Shazam
+    request. Anything else goes to Shazam, which finds more songs and has richer data.
+    """
+    candidates = identify.identify_acoustid(acoustid_key, path) if acoustid_key else []
+    filename = os.path.basename(path)
+    candidates = [{**c, 'title': metadata.drop_unconfirmed_details(c['title'], filename)} for c in candidates]
+    if reference:
+        for candidate in candidates:
+            if matches_reference(candidate['artist'], candidate['title'], reference):
+                return candidate, "AcoustID"
+
+    proposal = identify.identify_shazam(path)
+    if proposal:
+        return proposal, "Shazam"
+    if candidates:
+        return candidates[0], "AcoustID"
     return None, ""
 
 
 def process_file(path, acoustid_key, state_dir):
     """Handles one file and returns its report row. Failures raise."""
     existing = audiofile.read_tags(path)
-    proposal, source = identify_file(path, acoustid_key)
+    reference = build_reference(os.path.basename(path), existing)
+    proposal, source = identify_file(path, acoustid_key, reference)
     if not proposal:
         return {"path": path, "status": "unidentified",
                 "old_artist": existing['artist'], "old_title": existing['title']}
 
-    reference = build_reference(os.path.basename(path), existing)
     if reference and not matches_reference(proposal['artist'], proposal['title'], reference):
         return {**identification_row(path, existing, proposal, source), "status": "review",
                 "detail": "differs from the file name (or current tags, if the name says nothing)"}
