@@ -3,3 +3,5 @@ python-magic-bin
 shazamio
 musicbrainzngs
 pyacoustid
+mutagen
+aiohttp-retry

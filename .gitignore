@@ -3,6 +3,11 @@
 
 # Python
 /venv
+__pycache__/
+.pytest_cache/
+
+# Report and original tags of each run
+/.autotag
 
 # JetBrains
 /.idea
