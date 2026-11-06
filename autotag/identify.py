@@ -111,6 +111,7 @@ def _date_and_name(release):
     return release[:2]
 
 
+@lru_cache(maxsize=512)
 def fetch_release_info(artist, title):
     """
     Earliest official release of exactly this artist and title, or None.

@@ -87,6 +87,22 @@ def matches_reference(artist, title, reference):
             or coverage(tokens(ref_title), identified) >= 0.6)
 
 
+def confirms_fingerprint(artist, title, reference, existing_artist):
+    """
+    Stricter than matches_reference, because a confirmed fingerprint skips Shazam.
+
+    Similar recordings share a fingerprint, so a cover or a later version must not
+    pass on its title alone.
+    """
+    if not matches_reference(artist, title, reference):
+        return False
+    ref_artist, ref_title = reference
+    known = tokens(f"{ref_artist} {ref_title} {existing_artist or ''}")
+    if not {t for t in tokens(core_title(title)) if t.isdigit()} <= known:
+        return False
+    return bool(ref_artist) or coverage(tokens(artist), known) >= 0.6
+
+
 def same_recording(artist_a, title_a, artist_b, title_b):
     """Strict check used to accept data from a catalog search."""
     return (tokens(artist_a) == tokens(artist_b)

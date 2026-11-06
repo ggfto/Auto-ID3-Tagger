@@ -1,6 +1,6 @@
 import pytest
 
-from autotag.matching import build_reference, is_informative, matches_reference, same_recording
+from autotag.matching import build_reference, confirms_fingerprint, is_informative, matches_reference, same_recording
 
 
 def accepts(filename, artist, title, existing=None):
@@ -56,3 +56,18 @@ def test_placeholders_are_not_informative():
 def test_catalog_results_must_be_the_same_recording():
     assert same_recording("Sérgio Mendes", "Never Gonna Let You Go", "Sergio Mendes", "Never Gonna Let You Go (Live)")
     assert not same_recording("2nd Today", "Set Free", "2nd Room", "Set Me Free")
+
+
+@pytest.mark.parametrize("artist,title,reference,existing,expected", [
+    ("Rick Astley", "Never Gonna", ("Rick Astley", "Never Gonna"), None, True),
+    # Without an artist in the name, the artist must appear somewhere the file knows.
+    ("The Bloomsbury Set", "Stayin Alive", ("", "Stayin' Alive_Bee Gees"), "Bee Gees", False),
+    ("Bee Gees", "Stayin Alive", ("", "Stayin' Alive_Bee Gees"), None, True),
+    ("Prince", "Kiss", ("", "Kiss"), "Prince", True),
+    ("Prince", "Kiss", ("", "Kiss"), None, False),
+    # A number in the title marks another recording unless the file also has it.
+    ("Blondie", "Atomic \u201998", ("Blondie", "Atomic"), None, False),
+    ("Blondie", "Summer Jam 2003", ("Blondie", "Summer Jam 2003"), None, True),
+])
+def test_confirms_fingerprint(artist, title, reference, existing, expected):
+    assert confirms_fingerprint(artist, title, reference, existing) is expected

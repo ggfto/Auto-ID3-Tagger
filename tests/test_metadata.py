@@ -1,6 +1,6 @@
 import pytest
 
-from autotag.metadata import (build_final, choose_album_and_year, choose_title, drop_unconfirmed_details, keep_spelling,
+from autotag.metadata import (album_is_doubtful, build_final, choose_album_and_year, choose_title, drop_unconfirmed_details, keep_spelling,
                               needs_release_info, nothing_to_change)
 
 
@@ -157,3 +157,29 @@ def test_identified_cover_wins_over_the_catalog():
 ])
 def test_drop_unconfirmed_details(title, filename, expected):
     assert drop_unconfirmed_details(title, filename) == expected
+
+
+def release(album, year, earliest):
+    return {"album": album, "year": year, "earliest_year": earliest}
+
+
+@pytest.mark.parametrize("title,info,expected", [
+    ("Song", release("Dumb Waiters", "1980", "1980"), False),
+    # A single the year before its album is normal.
+    ("Song", release("Happier Than Ever", "2021", "2020"), False),
+    ("Song", release("Best Disco", "2024", "1981"), True),
+    ("Song", release("Promo Only: Mainstream Club, May 1993", "1993", "1992"), True),
+    ("Song", release("Bravo Hits 114", "2021", "2021"), True),
+    ("Song", {"earliest_year": "1986", "any_album": "Best of Hit Album"}, True),
+    ("Song", None, True),
+    # The catalog is not used for a specific recording.
+    ("Song (Remix)", release("Album", "1990", "1990"), True),
+])
+def test_album_is_doubtful(title, info, expected):
+    assert album_is_doubtful(title, info) is expected
+
+
+def test_compilation_in_the_catalog_does_not_replace_the_identification():
+    proposal = {"album": "Jalebi Baby - Single", "year": "2021"}
+    assert choose_album_and_year(proposal, "Jalebi Baby", {}, catalog("Bravo Hits 114", "2020")) == (
+        "Jalebi Baby - Single", "2021")

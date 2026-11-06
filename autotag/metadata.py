@@ -14,6 +14,12 @@ UNRELIABLE_ALBUM = re.compile(
     r"sped[ -]up|slowed|nightcore|karaoke|tribute|podcast|workout|relax|lullab|ringtone|made famous"
     r"|in the style of|originally performed|various (tracks|artists)", re.IGNORECASE)
 
+# Catalog albums with these names are compilations, even when catalogued as studio albums.
+COMPILATION_ALBUM = re.compile(
+    r"\b(hits|bravo|absolute|promo only|club mix|best of|vol(ume)?\.?\s*\d+)\b", re.IGNORECASE)
+# A single often comes out the year before its album, but not much earlier.
+MAX_YEARS_BEFORE_ALBUM = 1
+
 BRACKETS = re.compile(r"\s*[(\[{]([^)\]}]*)[)\]}]")
 TRAILING_DASH = re.compile(r"\s+[-–—]\s+([^-–—]+)$")
 
@@ -104,7 +110,7 @@ def choose_album_and_year(proposal, title, existing, release_info):
 
     if release_info and not SPECIFIC_RECORDING.search(title):
         catalog_album, catalog_year = release_info.get("album"), release_info.get("year")
-        if catalog_album and UNRELIABLE_ALBUM.search(catalog_album):
+        if catalog_album and (UNRELIABLE_ALBUM.search(catalog_album) or COMPILATION_ALBUM.search(catalog_album)):
             pass
         elif catalog_album and not (album and year):
             album, year = catalog_album, catalog_year
@@ -121,6 +127,20 @@ def choose_album_and_year(proposal, title, existing, release_info):
         # reissue or a mislabeled release, so the identification stays.
 
     return album or existing.get("album"), year or existing.get("year")
+
+
+def album_is_doubtful(title, release_info):
+    """True when the catalog alone cannot be trusted for the album of this title."""
+    if SPECIFIC_RECORDING.search(title) or not release_info or not release_info.get("album"):
+        return True
+    if COMPILATION_ALBUM.search(release_info["album"]):
+        return True
+    return int(release_info["year"]) - int(release_info["earliest_year"]) > MAX_YEARS_BEFORE_ALBUM
+
+
+def is_album_of_another_recording(album, title):
+    """A live album, for instance, when nothing says the file is a live recording."""
+    return bool(album and SPECIFIC_RECORDING.search(album) and not SPECIFIC_RECORDING.search(title))
 
 
 def needs_release_info(proposal, title):

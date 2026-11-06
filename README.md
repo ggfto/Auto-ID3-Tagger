@@ -8,7 +8,7 @@ This tool automatically identifies MP3, M4A and WMA files in a directory (recurs
 *   **Parallel, With a Limit**: Each file runs in its own thread, up to `--workers` (default 4). A file waiting to retry does not hold a thread, so the queue keeps moving.
 *   **Respects Rate Limits**: Shazam limits requests across all threads, so they share one pace that slows down when Shazam refuses a request and speeds up again while requests succeed. The limit, not the number of threads, sets the speed of a long run.
 *   **Multiple Recognition Providers**:
-    *   **AcoustID** (optional, needs a free API key): Tried first. A result the file name confirms saves a Shazam request, which matters because Shazam's limit sets the speed of a long run.
+    *   **AcoustID** (optional, needs a free API key): Tried first. A result the file name confirms saves a Shazam request, which matters because Shazam's limit sets the speed of a long run. Shazam is still asked for the release when MusicBrainz has no studio album, names a compilation, or dates the album over a year after the song's first release.
     *   **Shazam**: Decides everything else. It finds more songs and also brings cover and genre.
 *   **Reliable Album and Year**: Uses **MusicBrainz** when it has an earlier official studio album of exactly that artist and title, or a better year for the same album. Remixes, live versions and similar recordings keep the release that was identified.
 *   **Cover Art**: From the identification, or from the **Cover Art Archive** when the file has no cover and MusicBrainz supplied the album.

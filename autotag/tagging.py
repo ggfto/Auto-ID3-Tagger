@@ -2,7 +2,10 @@
 import os
 
 from . import audiofile, backup, identify, metadata
-from .matching import build_reference, matches_reference
+from .matching import build_reference, confirms_fingerprint, matches_reference
+
+
+RELEASE_FIELDS = ('album', 'year', 'genre', 'cover_art')
 
 
 def identification_row(path, existing, proposal, source):
@@ -40,7 +43,7 @@ def write_proposal(path, proposal, existing, source, status, state_dir, discard_
     return {**row, "status": status}
 
 
-def identify_file(path, acoustid_key, reference):
+def identify_file(path, acoustid_key, reference, existing_artist=None):
     """
     (proposal, source), or (None, '') when nothing matched.
 
@@ -52,7 +55,7 @@ def identify_file(path, acoustid_key, reference):
     candidates = [{**c, 'title': metadata.drop_unconfirmed_details(c['title'], filename)} for c in candidates]
     if reference:
         for candidate in candidates:
-            if matches_reference(candidate['artist'], candidate['title'], reference):
+            if confirms_fingerprint(candidate['artist'], candidate['title'], reference, existing_artist):
                 return candidate, "AcoustID"
 
     proposal = identify.identify_shazam(path)
@@ -63,18 +66,39 @@ def identify_file(path, acoustid_key, reference):
     return None, ""
 
 
+def _agrees(proposal, source, reference, existing):
+    if source == "AcoustID":
+        return confirms_fingerprint(proposal['artist'], proposal['title'], reference, existing['artist'])
+    return matches_reference(proposal['artist'], proposal['title'], reference)
+
+
+def with_shazam_release(path, proposal, reference, title):
+    """The proposal with Shazam's release data, if Shazam names the same song and recording."""
+    other = identify.identify_shazam(path)
+    if not other or not matches_reference(other['artist'], other['title'], reference):
+        return proposal, "AcoustID"
+    if metadata.is_album_of_another_recording(other.get('album'), title):
+        return {**proposal, 'genre': other.get('genre')}, "AcoustID"
+    return {**proposal, **{field: other.get(field) for field in RELEASE_FIELDS}}, "AcoustID+Shazam"
+
+
 def process_file(path, acoustid_key, state_dir):
     """Handles one file and returns its report row. Failures raise."""
     existing = audiofile.read_tags(path)
     reference = build_reference(os.path.basename(path), existing)
-    proposal, source = identify_file(path, acoustid_key, reference)
+    proposal, source = identify_file(path, acoustid_key, reference, existing['artist'])
     if not proposal:
         return {"path": path, "status": "unidentified",
                 "old_artist": existing['artist'], "old_title": existing['title']}
 
-    if reference and not matches_reference(proposal['artist'], proposal['title'], reference):
+    if reference and not _agrees(proposal, source, reference, existing):
         return {**identification_row(path, existing, proposal, source), "status": "review",
                 "detail": "differs from the file name (or current tags, if the name says nothing)"}
+
+    if source == "AcoustID" and reference:
+        title = metadata.choose_title(proposal['title'], os.path.basename(path), existing['title'])
+        if metadata.album_is_doubtful(title, identify.fetch_release_info(proposal['artist'], proposal['title'])):
+            proposal, source = with_shazam_release(path, proposal, reference, title)
 
     status = "tagged" if reference else "tagged_no_reference"
     return write_proposal(path, proposal, existing, source, status, state_dir)

@@ -20,6 +20,13 @@ def lookup(monkeypatch):
     identify.identify_acoustid.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def empty_catalog_cache():
+    identify.fetch_release_info.cache_clear()
+    yield
+    identify.fetch_release_info.cache_clear()
+
+
 def result(score, title, artist):
     recording = {"id": "r", "title": title, "artists": [{"name": artist}]}
     return {"score": score, "recordings": [recording]}

@@ -68,3 +68,86 @@ def test_shazam_refusal_is_not_replaced_by_an_unconfirmed_result(services):
     services["shazam"] = identify.RateLimited("Shazam")
     with pytest.raises(identify.RateLimited):
         tagging.identify_file("f", "key", REFERENCE)
+
+
+TAGS = {"artist": "Queen", "title": "Bohemia", "album": None, "year": None, "genre": None, "has_cover": False}
+
+
+@pytest.fixture
+def pipeline(services, monkeypatch):
+    """process_file without touching a file; returns the state and what would be written."""
+    written = []
+    monkeypatch.setattr(tagging.audiofile, "read_tags", lambda path: dict(TAGS))
+    monkeypatch.setattr(tagging.backup, "backup_tag", lambda path, state_dir: None)
+    monkeypatch.setattr(tagging.audiofile, "write_tags", lambda path, final: written.append(final))
+    services["written"] = written
+    return services
+
+
+def good_album(monkeypatch):
+    info = {"album": "Album", "year": "1990", "earliest_year": "1990", "any_album": "Album"}
+    monkeypatch.setattr(identify, "fetch_release_info", lambda artist, title: info)
+
+
+def doubtful_album(monkeypatch):
+    info = {"album": "Bravo Hits 7", "year": "1995", "earliest_year": "1990", "any_album": "Bravo Hits 7"}
+    monkeypatch.setattr(identify, "fetch_release_info", lambda artist, title: info)
+
+
+def test_trusted_catalog_album_needs_no_shazam(pipeline, monkeypatch):
+    good_album(monkeypatch)
+    pipeline["acoustid"] = [proposal("Queen", "Bohemia")]
+
+    row = tagging.process_file("Queen - Bohemia.mp3", "key", "state")
+
+    assert pipeline["shazam_calls"] == 0
+    assert row["source"] == "AcoustID"
+    assert pipeline["written"][0]["album"] == "Album"
+
+
+def test_doubtful_album_takes_the_release_data_from_shazam(pipeline, monkeypatch):
+    doubtful_album(monkeypatch)
+    pipeline["acoustid"] = [proposal("Queen", "Bohemia")]
+    pipeline["shazam"] = {**proposal("Queen", "Bohemia"), "album": "Own", "year": "1991", "genre": "Pop",
+                          "cover_art": "http://own"}
+
+    row = tagging.process_file("Queen - Bohemia.mp3", "key", "state")
+
+    assert row["source"] == "AcoustID+Shazam"
+    final = pipeline["written"][0]
+    assert (final["album"], final["year"], final["genre"], final["cover_art"]) == ("Own", "1991", "Pop", "http://own")
+
+
+def test_shazam_naming_another_song_is_ignored(pipeline, monkeypatch):
+    doubtful_album(monkeypatch)
+    pipeline["acoustid"] = [proposal("Queen", "Bohemia")]
+    pipeline["shazam"] = {**proposal("Other", "Different"), "album": "Wrong", "year": "1991"}
+
+    row = tagging.process_file("Queen - Bohemia.mp3", "key", "state")
+
+    # The tags already say this artist and title, so without Shazam's album nothing changes.
+    assert (row["source"], row["status"]) == ("AcoustID", "unchanged")
+    assert row["album"] != "Wrong"
+    assert pipeline["written"] == []
+
+
+def test_unconfirmed_fingerprint_waits_for_review_even_if_the_title_matches(pipeline):
+    pipeline["acoustid"] = [proposal("The Bloomsbury Set", "Stayin Alive")]
+
+    row = tagging.process_file("Stayin' Alive_Bee Gees.mp3", "key", "state")
+
+    assert row["status"] == "review"
+    assert pipeline["written"] == []
+
+
+def test_live_album_is_not_used_for_a_title_that_is_not_live(pipeline, monkeypatch):
+    info = {"album": "Studio", "year": "1995", "earliest_year": "1979", "any_album": "Studio"}
+    monkeypatch.setattr(identify, "fetch_release_info", lambda artist, title: info)
+    pipeline["acoustid"] = [proposal("Queen", "Bohemia")]
+    pipeline["shazam"] = {**proposal("Queen", "Bohemia"), "album": "Rio After Dark (Live In Rio)", "year": "2002",
+                          "genre": "Rock", "cover_art": "http://live"}
+
+    tagging.process_file("Queen - Bohemia.mp3", "key", "state")
+
+    final = pipeline["written"][0]
+    assert (final["album"], final["year"], final["genre"], final["cover_art"]) == ("Studio", "1995", "Rock", None)
